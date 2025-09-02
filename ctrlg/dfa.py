@@ -555,6 +555,46 @@ class EOSBuilder:
         return self.dfa_graph
 
 
+# match {"hello": "world"}
+class myFlatJsonBuilder:
+    def __init__(self, tokenizer, vocab_size):
+        self.tokenizer = tokenizer
+        self.target_tokens = tokenizer.encode('{"hello": "world"}')
+        print("Encoded tokens:", self.target_tokens)
+        for t in self.target_tokens:
+            print(f"Token {t}: {tokenizer.decode([t])}")
+
+        self.vocab_size = vocab_size
+
+    def build(self):
+        n = len(self.target_tokens)
+        edges = []
+
+        # Step 1: 正常路徑 0 -> 1 -> 2 -> ... -> n (狀態 n = 6)
+        for i, token in enumerate(self.target_tokens):
+            allowed = np.zeros((self.vocab_size,), dtype=bool)
+            allowed[token] = True
+            edges.append((i, i+1, allowed))
+
+        # Step 2: 定義 trap state（假設為狀態 n+1 = 7）
+        trap_state = n + 1
+
+        # Step 3: 所有從接受狀態（n）出發的 token，都導向 trap state
+        # 也就是：在狀態 n 時，任何 token 都會讓它掉入 trap
+        all_tokens = np.ones((self.vocab_size,), dtype=bool)  # 所有 token 都允許觸發 trap
+        edges.append((n, trap_state, all_tokens))
+
+        # Step 4: trap state 自我循環
+        edges.append((trap_state, trap_state, all_tokens))
+
+        # Step 5: 只有狀態 n 是接受狀態
+        return {
+            'edges': edges,
+            'initial_state': 0,
+            'accept_states': {n},  # 只有完全匹配後的狀態 6 是接受狀態
+        }
+
+
 # Ad-hoc implementation of a DFA builder that counts the number of words.
 # Here each word is defined as some English characters (i.e. isalpha() gives True)
 # seperatred by a character from the sep list. If it does not work as you expected,

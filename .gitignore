@@ -2,3 +2,5 @@ workspace/*
 distillation/workspace/
 .vscode
 .*
+ctrlg.egg-info/
+ctrlg/__pycache__/
