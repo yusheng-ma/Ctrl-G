@@ -559,39 +559,62 @@ class EOSBuilder:
 class myFlatJsonBuilder:
     def __init__(self, tokenizer, vocab_size):
         self.tokenizer = tokenizer
-        self.target_tokens = tokenizer.encode('{"hello": "world"}')
-        print("Encoded tokens:", self.target_tokens)
-        for t in self.target_tokens:
-            print(f"Token {t}: {tokenizer.decode([t])}")
-
         self.vocab_size = vocab_size
 
+        all_special_ids = set(tokenizer.all_special_ids)
+        # now consider spaces
+        STRING = np.zeros((vocab_size,), dtype=bool)
+        LEFT_BRACE = np.zeros((vocab_size,), dtype=bool)
+        RIGHT_BRACE = np.zeros((vocab_size,), dtype=bool)
+        COLON = np.zeros((vocab_size,), dtype=bool)
+
+        for token_id in range(0, vocab_size):
+            token = tokenizer.decode([tokenizer.all_special_ids[0], token_id])
+            token = token[len(tokenizer.decode(tokenizer.all_special_ids[0])):]
+
+            # here, + spaces means involving arbitrary leading & trailing zeros
+            stripped_text = token.strip()
+            # if L BRACE + spaces
+                # LEFT_BRACE[token_id] = 1
+            if stripped_text == '{':
+                LEFT_BRACE[token_id] = 1
+            elif stripped_text == '}':
+                RIGHT_BRACE[token_id] = 1
+            elif stripped_text == ':':
+                COLON[token_id] = 1
+            elif '"' in stripped_text and stripped_text not in ['{', '}', ':']:
+                STRING[token_id] = 1 # i guess it will break, let it break first
+
+        self.STRING = STRING
+        self.LEFT_BRACE = LEFT_BRACE
+        self.RIGHT_BRACE = RIGHT_BRACE
+        self.COLON = COLON
+
     def build(self):
-        n = len(self.target_tokens)
+        # init: wait for {
+        # wait for "string key"
+        # wait for COLON
+        # wait for "string value"
+        # wait for }
+        # accept
         edges = []
+        n = 5
+        trap_state = 6
 
-        # Step 1: 正常路徑 0 -> 1 -> 2 -> ... -> n (狀態 n = 6)
-        for i, token in enumerate(self.target_tokens):
-            allowed = np.zeros((self.vocab_size,), dtype=bool)
-            allowed[token] = True
-            edges.append((i, i+1, allowed))
+        edges.append((0, 1, self.LEFT_BRACE))
+        edges.append((1, 2, self.STRING))
+        edges.append((2, 3, self.COLON))
+        edges.append((3, 4, self.STRING))
+        edges.append((4, 5, self.RIGHT_BRACE))
 
-        # Step 2: 定義 trap state（假設為狀態 n+1 = 7）
-        trap_state = n + 1
-
-        # Step 3: 所有從接受狀態（n）出發的 token，都導向 trap state
-        # 也就是：在狀態 n 時，任何 token 都會讓它掉入 trap
-        all_tokens = np.ones((self.vocab_size,), dtype=bool)  # 所有 token 都允許觸發 trap
-        edges.append((n, trap_state, all_tokens))
-
-        # Step 4: trap state 自我循環
+        all_tokens = np.ones((self.vocab_size,), dtype=bool)
+        edges.append((5, trap_state, all_tokens))  # accept 後不能再輸入
         edges.append((trap_state, trap_state, all_tokens))
 
-        # Step 5: 只有狀態 n 是接受狀態
         return {
             'edges': edges,
             'initial_state': 0,
-            'accept_states': {n},  # 只有完全匹配後的狀態 6 是接受狀態
+            'accept_states': {5},
         }
 
 
