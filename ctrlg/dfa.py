@@ -563,16 +563,17 @@ class myFlatJsonBuilder:
 
         all_special_ids = set(tokenizer.all_special_ids)
         # now consider spaces
-        STRING = np.zeros((vocab_size,), dtype=bool)
         LEFT_BRACE = np.zeros((vocab_size,), dtype=bool)
         RIGHT_BRACE = np.zeros((vocab_size,), dtype=bool)
         COLON = np.zeros((vocab_size,), dtype=bool)
+        QUOTATION_MARK = np.zeros((vocab_size,), dtype=bool)  # 新增：代表 '"'
+        STRING = np.zeros((vocab_size,), dtype=bool)         # 新增：真正的字串內容（不含引號本身）
 
         for token_id in range(0, vocab_size):
             token = tokenizer.decode([tokenizer.all_special_ids[0], token_id])
             token = token[len(tokenizer.decode(tokenizer.all_special_ids[0])):]
 
-            # here, + spaces means involving arbitrary leading & trailing zeros
+            # here, + spaces means involving arbitrary leading & trailing space
             stripped_text = token.strip()
             # if L BRACE + spaces
                 # LEFT_BRACE[token_id] = 1
@@ -582,39 +583,54 @@ class myFlatJsonBuilder:
                 RIGHT_BRACE[token_id] = 1
             elif stripped_text == ':':
                 COLON[token_id] = 1
-            elif '"' in stripped_text and stripped_text not in ['{', '}', ':']:
-                STRING[token_id] = 1 # i guess it will break, let it break first
+            elif stripped_text == '"':
+                QUOTATION_MARK[token_id] = 1 # i guess it will break, let it break first
+            else: #elif stripped_text not in ['{', '}', ':', '"']:
+                STRING[token_id] = 1 # not broken 但不夠嚴謹
 
-        self.STRING = STRING
         self.LEFT_BRACE = LEFT_BRACE
         self.RIGHT_BRACE = RIGHT_BRACE
         self.COLON = COLON
+        self.QUOTATION_MARK = QUOTATION_MARK
+        self.STRING = STRING
+
 
     def build(self):
-        # init: wait for {
-        # wait for "string key"
-        # wait for COLON
-        # wait for "string value"
-        # wait for }
-        # accept
+        # 狀態設計：
+        # 0: start
+        # 1: { 已讀
+        # 2: " 已讀（key 開始）
+        # 3: key content 已讀
+        # 4: " 已讀（key 結束）
+        # 5: : 已讀
+        # 6: " 已讀（value 開始）
+        # 7: value content 已讀
+        # 8: " 已讀（value 結束）
+        # 9: } 已讀 → accept
+        # 10: trap
+
         edges = []
-        n = 5
-        trap_state = 6
+        n = 9
+        trap = 10
 
         edges.append((0, 1, self.LEFT_BRACE))
-        edges.append((1, 2, self.STRING))
-        edges.append((2, 3, self.COLON))
-        edges.append((3, 4, self.STRING))
-        edges.append((4, 5, self.RIGHT_BRACE))
+        edges.append((1, 2, self.QUOTATION_MARK))
+        edges.append((2, 3, self.STRING))          # key content
+        edges.append((3, 4, self.QUOTATION_MARK))
+        edges.append((4, 5, self.COLON))
+        edges.append((5, 6, self.QUOTATION_MARK))
+        edges.append((6, 7, self.STRING))          # value content
+        edges.append((7, 8, self.QUOTATION_MARK))
+        edges.append((8, 9, self.RIGHT_BRACE))
 
         all_tokens = np.ones((self.vocab_size,), dtype=bool)
-        edges.append((5, trap_state, all_tokens))  # accept 後不能再輸入
-        edges.append((trap_state, trap_state, all_tokens))
+        edges.append((n, trap, all_tokens))
+        edges.append((trap, trap, all_tokens))
 
         return {
             'edges': edges,
             'initial_state': 0,
-            'accept_states': {5},
+            'accept_states': {n}
         }
 
 
