@@ -568,6 +568,7 @@ class myFlatJsonBuilder:
         COLON = np.zeros((vocab_size,), dtype=bool)
         QUOTATION_MARK = np.zeros((vocab_size,), dtype=bool)  # 新增：代表 '"'
         STRING = np.zeros((vocab_size,), dtype=bool)         # 新增：真正的字串內容（不含引號本身）
+        COMMA = np.zeros((vocab_size,), dtype=bool)
 
         for token_id in range(0, vocab_size):
             token = tokenizer.decode([tokenizer.all_special_ids[0], token_id])
@@ -585,6 +586,8 @@ class myFlatJsonBuilder:
                 COLON[token_id] = 1
             elif stripped_text == '"':
                 QUOTATION_MARK[token_id] = 1 # i guess it will break, let it break first
+            elif stripped_text == ',':
+                COMMA[token_id] = 1
             else: #elif stripped_text not in ['{', '}', ':', '"']:
                 STRING[token_id] = 1 # not broken 但不夠嚴謹
 
@@ -593,6 +596,7 @@ class myFlatJsonBuilder:
         self.COLON = COLON
         self.QUOTATION_MARK = QUOTATION_MARK
         self.STRING = STRING
+        self.COMMA = COMMA
 
 
     def build(self):
@@ -605,8 +609,9 @@ class myFlatJsonBuilder:
         # 5: : 已讀
         # 6: " 已讀（value 開始）
         # 7: value content 已讀
-        # 8: " 已讀（value 結束）
-        # 9: } 已讀 → accept
+        # 8: " 已讀（value 結束） .... from here maybe } or ,!
+            # 1: , 已讀 → back to 1? keep it simple: do not accept ending ,} 
+            # 9: } 已讀 → accept
         # 10: trap
 
         edges = []
@@ -621,6 +626,7 @@ class myFlatJsonBuilder:
         edges.append((5, 6, self.QUOTATION_MARK))
         edges.append((6, 7, self.STRING))          # value content
         edges.append((7, 8, self.QUOTATION_MARK))
+        edges.append((8, 1, self.COMMA))           # read comma back to 1
         edges.append((8, 9, self.RIGHT_BRACE))
 
         all_tokens = np.ones((self.vocab_size,), dtype=bool)
